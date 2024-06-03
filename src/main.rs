@@ -1,6 +1,5 @@
 use image::{GrayImage, Luma};
-use nannou::color::rgb;
-use nannou::{color::*, event::Update, App, Frame};
+use minifb::{Key, Window, WindowOptions};
 use ndarray::{s, Array2, ArrayView2, Zip};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
@@ -26,26 +25,7 @@ fn laplacian(arr: ArrayView2<f64>) -> Array2<f64> {
     result
 }
 
-fn main() {
-    nannou::app(model).update(update).simple_window(view).run();
-}
-
-struct Model {
-    conc_a: Array2<f64>,
-    conc_b: Array2<f64>,
-}
-
-fn model(_app: &App) -> Model {
-    Model {
-        conc_a: Array2::random((SIZE, SIZE), Uniform::new(0.5, 1.0)),
-        conc_b: Array2::random((SIZE, SIZE), Uniform::new(0.0, 0.5)),
-    }
-}
-
-fn update(_app: &App, model: &mut Model, _update: Update) {
-    let conc_a = &mut model.conc_a;
-    let conc_b = &mut model.conc_b;
-
+fn update(conc_a: &mut Array2<f64>, conc_b: &mut Array2<f64>) {
     let lap_a = laplacian(conc_a.view());
     let lap_b = laplacian(conc_b.view());
 
@@ -60,32 +40,32 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
         });
 }
 
-fn view(app: &App, model: &Model, frame: Frame) {
-    let window_rect = app.window_rect();
-    let draw = app.draw();
+fn main() {
+    let mut conc_a = Array2::random((SIZE, SIZE), Uniform::new(0.5, 1.0));
+    let mut conc_b = Array2::random((SIZE, SIZE), Uniform::new(0.0, 0.5));
 
-    let cell_w = window_rect.w() / SIZE as f32;
-    let cell_h = window_rect.h() / SIZE as f32;
+    let mut window = Window::new("Turing Pattern", SIZE, SIZE, WindowOptions::default())
+        .unwrap_or_else(|e| {
+            panic!("{}", e);
+        });
 
-    // let conc_a = &model.conc_a;
-    let conc_b = &model.conc_b;
+    while window.is_open() && !window.is_key_down(Key::Escape) {
+        update(&mut conc_a, &mut conc_b);
 
-    let mut img = GrayImage::new(SIZE as u32, SIZE as u32);
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        let value = (conc_b[[x as usize, y as usize]] * 255.0) as u8;
-        *pixel = Luma([value]);
+        let mut img = GrayImage::new(SIZE as u32, SIZE as u32);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            let value = (conc_b[[x as usize, y as usize]] * 255.0) as u8;
+            *pixel = Luma([value]);
+        }
 
-        draw.rect()
-            .w_h(cell_w, cell_h)
-            .color(rgb(value, value, value))
-            .x_y(x as f32 * cell_w, y as f32 * cell_h);
+        let buffer: Vec<u32> = img
+            .enumerate_pixels()
+            .map(|(_, _, pixel)| {
+                let value = pixel.0[0] as u32;
+                (value << 16) | (value << 8) | value
+            })
+            .collect();
+
+        window.update_with_buffer(&buffer, SIZE, SIZE).unwrap();
     }
-
-    draw.text(&app.elapsed_frames().to_string())
-        .font_size(24)
-        .x(window_rect.left() + 50.0)
-        .y(window_rect.top() - 10.0)
-        .color(WHITE);
-    draw.background().color(BLACK);
-    draw.to_frame(app, &frame).unwrap();
 }
